@@ -9,7 +9,6 @@ class ChatClient {
         this.onlineSet = new Set();
         this.expectingWho = false;
         this.whoTimer = null;
-        this.pendingOwn = [];
         this.connect();
         this.bind();
     }
@@ -81,6 +80,7 @@ class ChatClient {
 
     connect() {
         const url = `ws://${location.host}/ws`;
+        // const url = `ws://127.0.0.1:8080/ws`;
         this.ws = new WebSocket(url);
         this.ws.onopen = () => {
             this.setStatus(true);
@@ -187,8 +187,7 @@ class ChatClient {
             this.sendRaw(`to|${this.targetUser}|${txt}`);
             this.pushMsg(`-> ${this.targetUser}: ${txt}`, true, true);
         } else {
-            this.pushMsg(txt, true, false, this.selfName || '我');
-            this.pendingOwn.push({ content: txt, t: Date.now() });
+            // 公聊：直接发送，不本地显示，等服务器回显
             this.sendRaw(txt);
         }
         inp.value = '';
@@ -310,19 +309,7 @@ class ChatClient {
             let name = rest.slice(0, nameEnd).trim();
             const content = rest.slice(nameEnd + 1);
             
-            // 去重自己的消息（本地已显示）
-            if (name === this.selfName && this.selfName !== '') {
-                this.pendingOwn = this.pendingOwn.filter(p => {
-                    if (p.matched) return false;
-                    if (p.content === content && (Date.now() - p.t) < 8000) {
-                        p.matched = true;
-                        return false;
-                    }
-                    return true;
-                });
-                return;
-            }
-            
+            // 显示所有公聊消息，包括自己的（移除去重逻辑）
             const own = (name === this.selfName && this.selfName !== '');
             this.pushMsg(content, own, false, name);
             return;
