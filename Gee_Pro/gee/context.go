@@ -79,3 +79,8 @@ func (c *Context) Data(code int, data []byte) {
 }
 
 // HTML 返回HTML字符串
+func (c *Context) HTML(code int, html string) {
+	c.SetHeader("Content-Type", "text/html")
+	c.Status(code)
+	c.Writer.Write([]byte(html))
+}
