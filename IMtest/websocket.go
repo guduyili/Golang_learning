@@ -4,6 +4,8 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gorilla/websocket"
 )
@@ -90,7 +92,10 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 // 启动WebSocket服务
 func (s *Server) StartWebServer() {
 	http.HandleFunc("/ws", s.HandleWebSocket)
-	http.Handle("/", http.FileServer(http.Dir("./static")))
+	exe, _ := os.Executable()
+	base := filepath.Dir(exe)
+	staticDir := filepath.Join(base, "static")
+	http.Handle("/", http.FileServer(http.Dir(staticDir)))
 	log.Println("WebSocket server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
