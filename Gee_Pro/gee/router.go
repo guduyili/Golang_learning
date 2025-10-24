@@ -7,11 +7,16 @@ import (
 type router struct {
 	// handlers 保存路由表，键为 "方法-路径"，值为对应的处理函数
 	handlers map[string]HandlerFunc
+	// roots 保存对应的 Trie 根节点
+	roots map[string]*node
 }
 
 func newRouter() *router {
 	// 初始化路由表
-	return &router{handlers: make(map[string]HandlerFunc)}
+	return &router{
+		handlers: make(map[string]HandlerFunc),
+		roots:    make(map[string]*node),
+	}
 }
 
 func (r *router) addRoute(method string, pattern string, handler HandlerFunc) {
