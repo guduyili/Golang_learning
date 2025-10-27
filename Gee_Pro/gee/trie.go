@@ -61,7 +61,7 @@ func (n *node) insert(pattern string, parts []string, height int) {
 // 查找匹配节点
 func (n *node) search(parts []string, height int) *node {
 	// 走到路径末尾 或 遇到通配符节点
-	if len(parts) == height || string.HasPrefix(n.part, "*") {
+	if len(parts) == height || strings.HasPrefix(n.part, "*") {
 		if n.pattern == "" {
 			return nil
 		}
@@ -78,4 +78,17 @@ func (n *node) search(parts []string, height int) *node {
 		}
 	}
 	return nil
+}
+
+// travel 遍历节点，存储匹配的节点到列表中
+func (n *node) travel(list *[]*node) {
+	//将当前节点的有效路由加入列表
+	if n.pattern != "" {
+		*list = append(*list, n)
+	}
+
+	//深度遍历子节点
+	for _, child := range n.children {
+		child.travel(list)
+	}
 }
