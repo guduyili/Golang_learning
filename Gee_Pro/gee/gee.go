@@ -3,7 +3,9 @@ package gee
 import (
 	"log"
 	"net/http"
+	"path"
 	"strings"
+	"text/template"
 )
 
 type HandlerFunc func(c *Context)
@@ -28,6 +30,11 @@ type (
 		router *router
 		//groups记录所有分组
 		groups []*RouterGroup
+
+		//html缓存已解析的模板集合：funcMap存储自定义模板函数
+		// funcMap 存储自定模板函数
+		htmlTemplates *template.Template
+		funcMap       template.FuncMap
 	}
 )
 
@@ -91,5 +98,39 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	c := newContext(w, req)
 	c.handlers = middlewares
+	c.engine = engine
 	engine.router.handle(c)
+}
+
+// createStaticHandler 创建处理静态文件请求的处理函数
+func (group *RouterGroup) createStaticHandler(relativePath string, fs http.FileSystem) HandlerFunc {
+	absolutePath := group.prefix + relativePath
+	fileServer := http.StripPrefix(absolutePath, http.FileServer(fs))
+	return func(c *Context) {
+		file := c.Param("filepath")
+		if _, err := fs.Open(file); err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+
+		fileServer.ServeHTTP(c.Writer, c.Req)
+	}
+}
+
+// Static 用于注册静态文件服务的路由
+func (group *RouterGroup) Static(relativePath string, root string) {
+	handler := group.createStaticHandler(relativePath, http.Dir(root))
+	urlPattern := path.Join(relativePath, "/*filepath")
+	group.GET(urlPattern, handler)
+}
+
+// SetFuncMap 提供模板渲染时可调用的自定义函数集合
+func (engine *Engine) SetFuncMap(funcMap map[string]interface{}) {
+	engine.funcMap = funcMap
+}
+
+// LoadHTMLGlob 用于加载并解析指定模式匹配的模板文件
+func (engine *Engine) LoadHTMLGlob(pattern string) {
+	// 通过模式解析模板，将funcMap注入后缓存到Engine中
+	engine.htmlTemplates = template.Must(template.New("").Funcs(engine.funcMap).ParseGlob(pattern))
 }
