@@ -1,4 +1,4 @@
-package gee
+package sc
 
 import (
 	"log"
@@ -133,4 +133,11 @@ func (engine *Engine) SetFuncMap(funcMap map[string]interface{}) {
 func (engine *Engine) LoadHTMLGlob(pattern string) {
 	// 通过模式解析模板，将funcMap注入后缓存到Engine中
 	engine.htmlTemplates = template.Must(template.New("").Funcs(engine.funcMap).ParseGlob(pattern))
+}
+
+// Deafult 返回一个默认的 Engine 实例，默认使用 Logger 和 Recovery 中间件
+func Default() *Engine {
+	engine := New()
+	engine.Use(Logger(), Recovery())
+	return engine
 }
