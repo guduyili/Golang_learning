@@ -21,6 +21,10 @@ type Context struct {
 
 	//response info
 	StatusCode int
+
+	//middleware
+	handlers []HandlerFunc
+	index    int
 }
 
 // NewContext 构造函数，创建一个新的 Context 实例
@@ -30,7 +34,23 @@ func newContext(w http.ResponseWriter, req *http.Request) *Context {
 		Req:    req,
 		Path:   req.URL.Path,
 		Method: req.Method,
+		index:  -1,
 	}
+}
+
+// 依次执行注册的中间件函数/处理函数链 index标识当前执行位置
+func (c *Context) Next() {
+	c.index++
+	s := len(c.handlers)
+	for ; c.index < s; c.index++ {
+		c.handlers[c.index](c)
+	}
+}
+
+func (c *Context) Fail(code int, err string) {
+	//中止中间件链的执行，直接返回错误信息
+	c.index = len(c.handlers)
+	c.JSON(code, H{"message": err})
 }
 
 // Param 获取路由参数

@@ -67,12 +67,18 @@ func (r *router) handle(c *Context) {
 
 	n, params := r.getRoute(c.Method, c.Path)
 	if n != nil {
-		c.Params = params
 		key := c.Method + "-" + n.pattern
-		r.handlers[key](c)
+		// 保存路径参数并将路由处理函数加入中间件链末尾
+		c.Params = params
+		// r.handlers[key](c)
+		c.handlers = append(c.handlers, r.handlers[key])
 	} else {
-		c.String(http.StatusNotFound, "404 NOT FOUND: %s\n", c.Path)
+		//未匹配任何路由， 追加一个返回404的处理函数
+		c.handlers = append(c.handlers, func(c *Context) {
+			c.String(http.StatusNotFound, "404 NOT FOUND: %s\n", c.Path)
+		})
 	}
+	c.Next()
 }
 
 // getRoute 根据请求的 method 和 path 查找对应的节点和参数
