@@ -56,3 +56,15 @@ func TestOnEvicted(t *testing.T) {
 		t.Fatalf("OnEvicted keys %v, expect %v", keys, expect)
 	}
 }
+
+// TestAdd 测试添加和更新功能
+func TestAdd(t *testing.T) {
+	lru := New(int64(0), nil)
+	//同一个 key，更新值
+	lru.Add("key1", String("123"))
+	lru.Add("key1", String("456"))
+
+	if v, ok := lru.Get("key1"); !ok || string(v.(String)) != "456" {
+		t.Fatalf("cache key1=456 failed")
+	}
+}
