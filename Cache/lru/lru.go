@@ -42,7 +42,6 @@ func New(maxBytes int64, onEvicted func(string, Value)) *Cache {
 // 如果 key 存在，则将对应节点移到队尾（表示最近使用过），并返回值
 func (c *Cache) Get(key string) (value Value, ok bool) {
 	if ele, ok := c.cache[key]; ok {
-
 		//双向链表作为队列，队首队尾是相对的，这里约定front为队尾
 		c.ll.MoveToFront(ele)
 		ret := ele.Value.(*entry)
