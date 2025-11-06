@@ -7,6 +7,14 @@ import (
 	"sync"
 )
 
+type Group struct {
+	name      string
+	getter    Getter
+	mainCache cache
+
+	peer PeerPicker
+}
+
 type Getter interface {
 	Get(key string) ([]byte, error)
 }
@@ -15,12 +23,6 @@ type GetterFunc func(key string) ([]byte, error)
 
 func (f GetterFunc) Get(key string) ([]byte, error) {
 	return f(key)
-}
-
-type Group struct {
-	name      string
-	getter    Getter
-	mainCache cache
 }
 
 var (
@@ -77,7 +79,16 @@ func (g *Group) Get(key string) (ByteView, error) {
 }
 
 // load 表示“从源头加载数据”
-func (g *Group) load(key string) (ByteView, error) {
+func (g *Group) load(key string) (value ByteView, err error) {
+	if g.peer != nil {
+		if peer, ok := g.peer.PickPeer(key); ok {
+			if value, err := g.getFromPeer(peer, key); err == nil {
+				return value, nil
+			}
+			log.Println("[Cache] Failed to get from peer", err)
+		}
+	}
+
 	return g.getLocally(key)
 }
 
@@ -95,4 +106,23 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 
 func (g *Group) populateCache(key string, value ByteView) {
 	g.mainCache.add(key, value)
+}
+
+// RegisterPeers 注册一个实现了 PeerPicker 接口的 HTTPPool
+func (g *Group) RegisterPeers(peers PeerPicker) {
+	if g.peer != nil {
+		panic("RegisterPeerPicker called more than once")
+	}
+	g.peer = peers
+}
+
+// getFromPeer 从对应节点获取缓存值
+func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+	bytes, err := peer.Get(g.name, key)
+	if err != nil {
+		return ByteView{}, err
+	}
+
+	return ByteView{b: bytes}, nil
+
 }
