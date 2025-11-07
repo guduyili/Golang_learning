@@ -3,6 +3,7 @@
 package cache
 
 import (
+	"cache/singleflight"
 	"log"
 	"sync"
 )
@@ -12,7 +13,8 @@ type Group struct {
 	getter    Getter
 	mainCache cache
 
-	peer PeerPicker
+	peer   PeerPicker
+	loader *singleflight.Group
 }
 
 type Getter interface {
@@ -44,6 +46,7 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 		mainCache: cache{
 			cacheBytes: cacheBytes,
 		},
+		loader: &singleflight.Group{},
 	}
 
 	groups[name] = g
@@ -80,16 +83,22 @@ func (g *Group) Get(key string) (ByteView, error) {
 
 // load 表示“从源头加载数据”
 func (g *Group) load(key string) (value ByteView, err error) {
-	if g.peer != nil {
-		if peer, ok := g.peer.PickPeer(key); ok {
-			if value, err := g.getFromPeer(peer, key); err == nil {
-				return value, nil
+	view1, err := g.loader.Do(key, func() (interface{}, error) {
+		if g.peer != nil {
+			if peer, ok := g.peer.PickPeer(key); ok {
+				if value, err := g.getFromPeer(peer, key); err == nil {
+					return value, nil
+				}
+				log.Println("[Cache] Failed to get from peer", err)
 			}
-			log.Println("[Cache] Failed to get from peer", err)
 		}
-	}
+		return g.getLocally(key)
+	})
 
-	return g.getLocally(key)
+	if err == nil {
+		return view1.(ByteView), nil
+	}
+	return
 }
 
 // getLocally 使用回调函数获取数据并添加到缓存

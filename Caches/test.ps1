@@ -11,14 +11,14 @@ Start-Sleep 3
 Write-Host "Testing..."
 
 Invoke-RestMethod "http://localhost:4000/api?key=jw"
-Invoke-RestMethod "http://localhost:4000/api?key=boyue"
-Invoke-RestMethod "http://localhost:4000/api?key=Sam"
+Invoke-RestMethod "http://localhost:4000/api?key=jw"
+Invoke-RestMethod "http://localhost:4000/api?key=jw"
 
 Write-Host "Press Enter to exit"
 Read-Host
 
-Stop-Process -Id $p1.Id -Force
-Stop-Process -Id $p2.Id -Force
-Stop-Process -Id $p3.Id -Force
+# Stop-Process -Id $p1.Id -Force
+# Stop-Process -Id $p2.Id -Force
+# Stop-Process -Id $p3.Id -Force
 
 Remove-Item "server.exe"
