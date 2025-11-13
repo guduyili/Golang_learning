@@ -17,9 +17,17 @@ var cs = service.NewChatService()
 // wsHandler 保持原有签名（被 websocket.Handler 包装并在 sc 的路由中调用）
 func wsHandler(conn *websocket.Conn) {
 	var curUserId string
+	var curRoom string
 	defer func() {
 		if curUserId != "" {
-			cs.RemoveOnlineUser(curUserId)
+			name, rooms := cs.RemoveOnlineUser(curUserId)
+
+			for _, room := range rooms {
+				cs.BroadcastRoom(room, curUserId, model.WsResponse{
+					Type: "userLeave",
+					Data: model.SystemEvent{UserId: curUserId, Name: name, Room: room},
+				})
+			}
 		}
 		conn.Close()
 		log.Printf("连接关闭：UserId=%s，远程地址：%s", curUserId, conn.RemoteAddr())
@@ -36,9 +44,9 @@ func wsHandler(conn *websocket.Conn) {
 
 		switch req.Type {
 		case "join":
-			handleJoin(conn, req, &curUserId)
+			handleJoin(conn, req, &curUserId, &curRoom)
 		case "findAllMessages":
-			handleFindAllMessages(conn)
+			handleFindAllMessages(conn, curUserId)
 		case "createMessage":
 			handleCreateMessage(conn, req, curUserId)
 		case "typing":
@@ -52,27 +60,62 @@ func wsHandler(conn *websocket.Conn) {
 }
 
 // handleJoin 处理用户加入聊天室请求
-func handleJoin(conn *websocket.Conn, req model.WsRequest, curUserId *string) {
+func handleJoin(conn *websocket.Conn, req model.WsRequest, curUserId *string, curRoom *string) {
 	userName := strings.TrimSpace(req.Name)
 	if userName == "" {
-		sendResponse(conn, "typeFail", map[string]string{"msg": "请先登录"})
+		sendResponse(conn, "joinFail", map[string]string{"msg": "昵称不能为空", "code": "emptyName"})
 		return
+	}
+
+	// 已登录用户重复 join，直接拒绝，避免重复映射与广播
+	if *curUserId != "" {
+		sendResponse(conn, "joinFail", map[string]string{"msg": "已登录，如需切换请先断开"})
+		return
+	}
+
+	// （删除错误的重复已登录判断）
+
+	// 可选房间参数：若 Data 中包含 {"room":"..."} 则加入该房间，否则默认 lobby
+	room := "lobby"
+	if req.Data != nil {
+		if m, ok := req.Data.(map[string]interface{}); ok {
+			if r, ok := m["room"].(string); ok && strings.TrimSpace(r) != "" {
+				room = strings.TrimSpace(r)
+			}
+		}
 	}
 
 	userId := cs.GenerateUserID()
 	*curUserId = userId
-	cs.AddOnlineUser(userId, conn)
 
-	sendResponse(conn, "joinSuccess", map[string]string{"userId": userId})
+	// 绑定在线用户（维护 name 与 room 映射），并返回当前房间在线人数
+	onlineCount, err := cs.AddOnlineUser(userId, userName, room, conn)
+	if err != nil {
+		// 名称已被占用
+		sendResponse(conn, "joinFail", map[string]string{"msg": "昵称已被占用", "code": "nameInUse"})
+		*curUserId = ""
+		return
+	}
+	*curRoom = room
 
+	// 给自己返回 join 成功，附带房间在线人数
+	sendResponse(conn, "joinSuccess", map[string]interface{}{"userId": userId, "name": userName, "room": room, "onlineCount": onlineCount})
+
+	// 向同房间其他尘缘广播有人加入
+	cs.BroadcastRoom(room, userId, model.WsResponse{Type: "userJoin", Data: model.SystemEvent{UserId: userId, Name: userName, Room: room, OnlineCount: onlineCount}})
 }
 
-// handleFindAllMessages 处理获取历史消息请求
-func handleFindAllMessages(conn *websocket.Conn) {
-	history := cs.GetHistoryMessages()
-	sendResponse(conn, "historyMessages", history)
-	log.Printf("拉取历史消息：条数=%d", len(history))
+// handleFindAllMessages 处理获取历史消息请求（需已登录）
+func handleFindAllMessages(conn *websocket.Conn, curUserId string) {
+	if curUserId == "" {
+		sendResponse(conn, "historyFail", map[string]string{"msg": "请先登录"})
+		return
+	}
 
+	room := cs.GetUserRoom(curUserId)
+	history := cs.GetHistoryMessages(room)
+	sendResponse(conn, "historyMessages", history)
+	log.Printf("拉取历史消息：UserId=%s Room=%s 条数=%d", curUserId, room, len(history))
 }
 
 // handleCreateMessage 处理发送消息（createMessage）请求
@@ -89,16 +132,17 @@ func handleCreateMessage(conn *websocket.Conn, req model.WsRequest, senderUserId
 	}
 
 	text, textOk := msgData["text"].(string)
-	name, nameOk := msgData["name"].(string)
+	// 服务器统一填充 name，避免信任前端随意冒用昵称
+	name := cs.GetUserName(senderUserId)
 	timestamp, timeOk := msgData["timestamp"].(string)
+	toUserId, _ := msgData["toUserId"].(string)
 
 	if !textOk {
 		sendResponse(conn, "msgFail", map[string]string{"msg": "消息缺少text字段（需为字符串）"})
 		return
 	}
-	if !nameOk {
-		sendResponse(conn, "msgFail", map[string]string{"msg": "消息缺少name字段（需为字符串）"})
-		return
+	if strings.TrimSpace(name) == "" {
+		name = "匿名用户"
 	}
 	if !timeOk {
 		sendResponse(conn, "msgFail", map[string]string{"msg": "消息缺少timestamp字段（需为字符串）"})
@@ -117,12 +161,19 @@ func handleCreateMessage(conn *websocket.Conn, req model.WsRequest, senderUserId
 		Timestamp: timestamp,
 	}
 
-	cs.SaveMessage(msg)
-
-	cs.Broadcast(senderUserId, model.WsResponse{
-		Type: "newMessage",
-		Data: msg,
-	})
+	if strings.TrimSpace(toUserId) != "" {
+		//私聊，进发送给目标，对方不在线则静默（不存历史）
+		msg.ToUserId = toUserId
+		cs.SendPrivate(toUserId, model.WsResponse{
+			Type: "privateMessage",
+			Data: msg,
+		})
+	} else {
+		//房间消息，根据用户当前room广播并保存历史
+		msg.Room = cs.GetUserRoom(senderUserId)
+		cs.SaveMessage(msg)
+		cs.BroadcastRoom(msg.Room, senderUserId, model.WsResponse{Type: "newMessage", Data: msg})
+	}
 
 	sendResponse(conn, "msgSuccess", map[string]string{"msg": "消息发送成功"})
 }
@@ -137,6 +188,7 @@ func handleTyping(conn *websocket.Conn, req model.WsRequest, senderUserId string
 	typingData, ok := req.Data.(map[string]interface{})
 	if !ok {
 		sendResponse(conn, "typeFail", map[string]string{"msg": "状态格式错误（需为对象）"})
+		return
 	}
 
 	isTyping, isTypingOk := typingData["isTyping"].(bool)
@@ -145,10 +197,10 @@ func handleTyping(conn *websocket.Conn, req model.WsRequest, senderUserId string
 		return
 	}
 
-	name, nameOK := typingData["name"].(string)
-	if !nameOK {
-		sendResponse(conn, "typeFail", map[string]string{"msg": "状态格式错误（name需为字符串）"})
-		return
+	// 统一从服务器侧获取昵称
+	name := cs.GetUserName(senderUserId)
+	if strings.TrimSpace(name) == "" {
+		name = "匿名"
 	}
 
 	status := model.TypingData{
@@ -156,7 +208,9 @@ func handleTyping(conn *websocket.Conn, req model.WsRequest, senderUserId string
 		Name:     name,
 		UserId:   senderUserId,
 	}
-	cs.Broadcast(senderUserId, model.WsResponse{
+	// 仅向同房间成员广播输入状态
+	room := cs.GetUserRoom(senderUserId)
+	cs.BroadcastRoom(room, senderUserId, model.WsResponse{
 		Type: "typingStatus",
 		Data: status,
 	})
@@ -170,6 +224,7 @@ func sendResponse(conn *websocket.Conn, respType string, data interface{}) {
 		Type: respType,
 		Data: data,
 	}
+	// 写入设置 3 秒超时，避免网络阻塞拖垮会话
 	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	if err := websocket.JSON.Send(conn, resp); err != nil {
 		log.Printf("发送响应失败：Type=%s，Error=%v", respType, err)
