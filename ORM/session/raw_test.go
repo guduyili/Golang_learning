@@ -2,22 +2,28 @@ package session
 
 import (
 	"database/sql"
+	"orm/dialect"
 	"os"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
-var TestDB *sql.DB
+var (
+	TestDB      *sql.DB
+	TestDial, _ = dialect.GetDialect("sqlite")
+)
 
 func TestMain(m *testing.M) {
 	// 初始化数据库连接
-	TestDB, _ = sql.Open("sqlite3", "../orm.db")
+	TestDB, _ = sql.Open("sqlite", "../orm.db")
 	code := m.Run()
 	_ = TestDB.Close()
 	os.Exit(code)
 }
 
 func NewTestSession() *Session {
-	return New(TestDB)
+	return New(TestDB, TestDial)
 }
 
 func TestSessionExec(t *testing.T) {
