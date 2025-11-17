@@ -12,7 +12,7 @@ import (
 // 若之前未设置 refTable，或传入的结构类型与缓存的不同，则重新 Parse。
 // 这样可以避免在同一个 Session 中持有过期的字段描述。
 func (s *Session) Model(value interface{}) *Session {
-	if s.refTable == nil || reflect.TypeOf(value).Name() != s.refTable.Model.(reflect.Type).Name() {
+	if s.refTable == nil || reflect.TypeOf(value) != reflect.TypeOf(s.refTable.Model) {
 		s.refTable = schema.Parse(value, s.dialect)
 	}
 	return s
@@ -35,6 +35,7 @@ func (s *Session) CreateTable() error {
 	}
 
 	desc := strings.Join(columns, ",")
+	// CREATE TABLE User (Name text PRIMARY KEY,Age integer );
 	_, err := s.Raw(fmt.Sprintf("CREATE TABLE %s (%s);", table.Name, desc)).Exec()
 	return err
 }

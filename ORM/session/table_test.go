@@ -9,7 +9,7 @@ type User struct {
 	Age  int
 }
 
-func TestSessionCreateTable(t *testing.T) {
+func TestSession_CreateTable(t *testing.T) {
 	s := NewTestSession().Model(&User{})
 	_ = s.DropTable()
 	_ = s.CreateTable()

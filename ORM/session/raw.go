@@ -2,6 +2,7 @@ package session
 
 import (
 	"database/sql"
+	"orm/clause"
 	"orm/dialect"
 	"orm/log"
 	"orm/schema"
@@ -15,6 +16,8 @@ type Session struct {
 
 	dialect  dialect.Dialect
 	refTable *schema.Schema
+
+	clause clause.Clause
 }
 
 // New 创建会话实例（轻量、无连接池，复用底层 *sql.DB）
@@ -29,6 +32,7 @@ func New(db *sql.DB, dialect dialect.Dialect) *Session {
 func (s *Session) Clear() {
 	s.sql.Reset()
 	s.sqlVars = nil
+	s.clause = clause.Clause{}
 }
 
 // DB 返回底层数据库连接
