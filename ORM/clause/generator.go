@@ -19,6 +19,9 @@ func init() {
 	generators[WHERE] = _where
 	generators[ORDERBY] = _orderBy
 	generators[LIMIT] = _limit
+	generators[UPDATE] = _update
+	generators[DELETE] = _delete
+	generators[COUNT] = _count
 }
 
 // genBindVars 生成形如 "?, ?, ?" 的占位符字符串
@@ -93,4 +96,30 @@ func _where(values ...interface{}) (string, []interface{}) {
 func _orderBy(values ...interface{}) (string, []interface{}) {
 	// ORDER BY
 	return fmt.Sprintf("ORDER BY %s", values[0]), []interface{}{}
+}
+
+// UPDATE 生成 UPDATE 子句
+func _update(values ...interface{}) (string, []interface{}) {
+	// UPDATE $tableName SET $field1 = ?, $field2 = ?
+	tableName := values[0]
+	m := values[1].(map[string]interface{})
+	var keys []string
+	var vars []interface{}
+	for k, v := range m {
+		keys = append(keys, k+" = ?")
+		vars = append(vars, v)
+	}
+	return fmt.Sprintf("UPDATE %s SET %s", tableName, strings.Join(keys, ", ")), vars
+}
+
+// DELETE 生成 DELETE 子句
+func _delete(values ...interface{}) (string, []interface{}) {
+	// DELETE FROM $tableName
+	return fmt.Sprintf("DELETE FROM %s", values[0]), []interface{}{}
+}
+
+// COUNT 生成 COUNT 子句
+func _count(values ...interface{}) (string, []interface{}) {
+	// SELECT COUNT(*) FROM $tableName
+	return _select(values[0], []string{"COUNT(*)"})
 }

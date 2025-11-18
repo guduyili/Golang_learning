@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"orm/clause"
 	"reflect"
 )
@@ -68,4 +69,83 @@ func (s *Session) Find(values interface{}) error {
 		destSlice.Set(reflect.Append(destSlice, dest))
 	}
 	return rows.Close()
+}
+
+// Update 根据当前 WHERE 条件更新字段：
+// 支持两种调用方式：
+// 1) Map：Update(map[string]interface{"Age":30,"Name":"Tom"})
+// 2) KV 可变参数：Update("Age",30,"Name","Tom")
+// 生成语句示例：UPDATE User SET Age = ?, Name = ? WHERE Name = ?
+func (s *Session) Update(kv ...interface{}) (int64, error) {
+	m, ok := kv[0].(map[string]interface{})
+	if !ok {
+		m = make(map[string]interface{})
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i].(string)] = kv[i+1]
+		}
+	}
+	s.clause.Set(clause.UPDATE, s.RefTable().Name, m)
+	sql, vars := s.clause.Build(clause.UPDATE, clause.WHERE)
+	result, err := s.Raw(sql, vars...).Exec()
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (s *Session) Where(desc string, args ...interface{}) *Session {
+	var vars []interface{}
+	s.clause.Set(clause.WHERE, append(append(vars, desc), args...)...)
+	return s
+}
+
+func (s *Session) OrderBy(desc string) *Session {
+	s.clause.Set(clause.ORDERBY, desc)
+	return s
+}
+
+// First 获取第一条记录：内部通过 Limit(1).Find(...) 实现：
+// 示例：u := &User{}; s.Where("Age = ?", 18).First(u)
+// 若无记录返回错误 errors.New("NOT FOUND")。
+func (s *Session) First(value interface{}) error {
+	dest := reflect.Indirect(reflect.ValueOf(value))
+	destSlice := reflect.New(reflect.SliceOf(dest.Type())).Elem()
+	if err := s.Limit(1).Find(destSlice.Addr().Interface()); err != nil {
+		return err
+	}
+
+	if destSlice.Len() == 0 {
+		return errors.New("NOT FOUND")
+	}
+
+	dest.Set(destSlice.Index(0))
+	return nil
+}
+
+// Limit 设置 LIMIT 子句，限制返回行数；可链式调用：s.Limit(1).First(&u)
+func (s *Session) Limit(num int) *Session {
+	s.clause.Set(clause.LIMIT, num)
+	return s
+}
+
+func (s *Session) Count() (int64, error) {
+	s.clause.Set(clause.COUNT, s.RefTable().Name)
+	sql, vars := s.clause.Build(clause.COUNT, clause.WHERE)
+	row := s.Raw(sql, vars...).QueryRow()
+	var count int64
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *Session) Delete() (int64, error) {
+	s.clause.Set(clause.DELETE, s.RefTable().Name)
+	sql, vars := s.clause.Build(clause.DELETE, clause.WHERE)
+
+	result, err := s.Raw(sql, vars...).Exec()
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

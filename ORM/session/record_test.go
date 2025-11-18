@@ -31,10 +31,40 @@ func TestSession_Insert(t *testing.T) {
 	}
 }
 
-func TestSessionFind(t *testing.T) {
+func TestSession_Find(t *testing.T) {
 	s := testRecordInit(t)
 	var users []User
 	if err := s.Find(&users); err != nil || len(users) != 2 {
 		t.Fatal("failed to find records:", err)
+	}
+}
+
+func TestSession_Update(t *testing.T) {
+	s := testRecordInit(t)
+	affected, _ := s.Where("Name = ?", "Tom").Update("Age", 30)
+
+	u := &User{}
+	_ = s.OrderBy("Age DESC").First(u)
+	if affected != 1 || u.Age != 30 {
+		t.Fatal("failed to update record")
+	}
+}
+
+func TestSession_Limit(t *testing.T) {
+	s := testRecordInit(t)
+	var users []User
+	err := s.Limit(1).Find(&users)
+	if err != nil || len(users) != 1 {
+		t.Fatal("failed to limit records:", err)
+	}
+}
+
+func TestSession_DeleteAndCount(t *testing.T) {
+	s := testRecordInit(t)
+	affected, _ := s.Where("Name = ?", "Tom").Delete()
+
+	count, _ := s.Count()
+	if affected != 1 || count != 1 {
+		t.Fatal("failed to delete record or count records")
 	}
 }

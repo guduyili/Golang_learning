@@ -28,6 +28,9 @@ const (
 	WHERE
 	ORDERBY
 	LIMIT
+	UPDATE
+	DELETE
+	COUNT
 )
 
 // Set 根据子句类型生成并存储对应的 SQL 片段及其变量。
