@@ -13,9 +13,9 @@ import (
 // 注意：多个 value 会被组成多行 VALUES 插入，提升批量写入效率。
 func (s *Session) Insert(values ...interface{}) (int64, error) {
 	recordValues := make([]interface{}, 0)
-
 	for _, value := range values {
 		table := s.Model(value).RefTable()
+		s.CallMethod(BeforeInsert, value)
 		s.clause.Set(clause.INSERT, table.Name, table.FieldNames)
 		recordValues = append(recordValues, table.RecordValues(value))
 	}
@@ -27,6 +27,7 @@ func (s *Session) Insert(values ...interface{}) (int64, error) {
 		return 0, err
 	}
 
+	s.CallMethod(AfterInsert, nil)
 	return result.RowsAffected()
 }
 
@@ -51,20 +52,22 @@ func (s *Session) Find(values interface{}) error {
 
 	// 执行查询后遍历 rows，每一行：
 	// a. 新建一个元素实例 dest
-	// b. 为每个字段构造其地址切片 values，用 rows.Scan 将数据填充到实例字段。
+	// b. 为每个字段构造其地址切片 scanTargets，用 rows.Scan 将数据填充到实例字段。
 	// c. 将实例 append 到原始切片。
 	for rows.Next() {
 		//利用反射创建 destType 的实例 dest，
-		// 将 dest 的所有字段平铺开，构造切片 values
+		// 将 dest 的所有字段平铺开，构造切片 scanTargets
 		dest := reflect.New(destType).Elem()
-		var values []interface{}
+		var scanTargets []interface{}
 		for _, name := range table.FieldNames {
-			values = append(values, dest.FieldByName(name).Addr().Interface())
+			scanTargets = append(scanTargets, dest.FieldByName(name).Addr().Interface())
 		}
 		//调用 rows.Scan() 将该行记录每一列的值依次赋值给 values 中的每一个字段。
-		if err := rows.Scan(values...); err != nil {
+		if err := rows.Scan(scanTargets...); err != nil {
 			return err
 		}
+		s.CallMethod(BeforeQuery, dest.Addr().Interface())
+		s.CallMethod(AfterQuery, dest.Addr().Interface())
 		//将 dest 添加到切片 destSlice 中。循环直到所有的记录都添加到切片 destSlice 中
 		destSlice.Set(reflect.Append(destSlice, dest))
 	}
@@ -77,6 +80,7 @@ func (s *Session) Find(values interface{}) error {
 // 2) KV 可变参数：Update("Age",30,"Name","Tom")
 // 生成语句示例：UPDATE User SET Age = ?, Name = ? WHERE Name = ?
 func (s *Session) Update(kv ...interface{}) (int64, error) {
+	s.CallMethod(BeforeUpdate, nil)
 	m, ok := kv[0].(map[string]interface{})
 	if !ok {
 		m = make(map[string]interface{})
@@ -90,6 +94,7 @@ func (s *Session) Update(kv ...interface{}) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	s.CallMethod(AfterUpdate, nil)
 	return result.RowsAffected()
 }
 
@@ -140,6 +145,7 @@ func (s *Session) Count() (int64, error) {
 }
 
 func (s *Session) Delete() (int64, error) {
+	s.CallMethod(BeforeDelete, nil)
 	s.clause.Set(clause.DELETE, s.RefTable().Name)
 	sql, vars := s.clause.Build(clause.DELETE, clause.WHERE)
 
@@ -147,5 +153,6 @@ func (s *Session) Delete() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	s.CallMethod(AfterDelete, nil)
 	return result.RowsAffected()
 }
