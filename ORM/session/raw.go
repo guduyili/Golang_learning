@@ -18,6 +18,8 @@ type Session struct {
 	refTable *schema.Schema
 
 	clause clause.Clause
+
+	tx *sql.Tx
 }
 
 // New 创建会话实例（轻量、无连接池，复用底层 *sql.DB）
@@ -35,8 +37,21 @@ func (s *Session) Clear() {
 	s.clause = clause.Clause{}
 }
 
+// CommonDB 定义了 *sql.DB 和 *sql.Tx的公共最小方法集，便于统一调用
+type CommonDB interface {
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(quert string, args ...interface{}) *sql.Row
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
+var _ CommonDB = (*sql.DB)(nil)
+var _ CommonDB = (*sql.Tx)(nil)
+
 // DB 返回底层数据库连接
-func (s *Session) DB() *sql.DB {
+func (s *Session) DB() CommonDB {
+	if s.tx != nil {
+		return s.tx
+	}
 	return s.db
 }
 

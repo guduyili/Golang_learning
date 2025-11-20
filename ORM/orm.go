@@ -54,3 +54,26 @@ func (engine *Engine) NewSession() *session.Session {
 	}
 	return session.New(engine.db, engine.dialect)
 }
+
+type TxFunc func(*session.Session) (interface{}, error)
+
+// Transaction 在事务中执行回调 f：
+// 开始事务
+func (engine *Engine) Transaction(f TxFunc) (result interface{}, err error) {
+	s := engine.NewSession()
+
+	if err := s.Begin(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = s.Rollback()
+			panic(p) // - 若发生 panic：先回滚，再将 panic 重新抛出；
+		} else if err != nil {
+			_ = s.Rollback() // - 若发生错误：回滚事务；
+		} else {
+			err = s.Commit() // - 否则：提交事务。
+		}
+	}()
+	return f(s)
+}

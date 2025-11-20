@@ -21,6 +21,7 @@ func (s *Session) CallMethod(method string, value interface{}) {
 	// 在test中  s.RefTable().Model 返回 指针 *Account{}
 	//MethodByName 返回与给定名称的方法对应的函数值。
 	fm := reflect.ValueOf(s.RefTable().Model).MethodByName(method)
+
 	if value != nil {
 		fm = reflect.ValueOf(value).MethodByName(method)
 	}
