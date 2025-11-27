@@ -3,6 +3,7 @@ package orm
 import (
 	"errors"
 	"orm/session"
+	"reflect"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -62,4 +63,21 @@ func transactionCommit(t *testing.T) {
 func TestEngineTransaction(t *testing.T) {
 	t.Run("rollback", func(t *testing.T) { transactionRollback(t) })
 	t.Run("commit", func(t *testing.T) { transactionCommit(t) })
+}
+
+func TestEngine_Migrate(t *testing.T) {
+	engine := OpenDB(t)
+	defer engine.Close()
+
+	s := engine.NewSession()
+	_, _ = s.Raw("DROP TABLE IF EXISTS User;").Exec()
+	_, _ = s.Raw("CREATE TABLE User (Name TEXT PRIMARY KEY, xxx INTEGER);").Exec()
+	_, _ = s.Raw("INSERT INTO User (`Name`) VALUES (?), (?)", "Tom", "Sam").Exec()
+	engine.Migrate(&User{})
+
+	rows, _ := s.Raw("SELECT * FROM User;").QueryRows()
+	columns, _ := rows.Columns()
+	if !reflect.DeepEqual(columns, []string{"Name", "Age"}) {
+		t.Fatal("failed to migrate table User, got columns:", columns)
+	}
 }
